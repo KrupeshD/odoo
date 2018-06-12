@@ -525,6 +525,42 @@ class PurchaseOrder(models.Model):
         for order in self:
             order.order_line.update({'date_planned': order.date_planned})
 
+    ## CUSTOM CODE FOR PURCHASE ORDER GENERATION ##
+
+    @api.model
+    def message_new( self, msg, custom_values=None ):
+        """ Overrides mail_thread message_new that is called by the mailgateway
+            through message_process.
+            This override updates the document according to the email.
+        """
+        # remove default author when going through the mail gateway. Indeed we
+        # do not want to explicitly set user_id to False; however we do not
+        # want the gateway user to be responsible if no other responsible is
+        # found.
+        create_context = dict(self.env.context or {})
+        create_context['default_user_id'] = False
+        if custom_values is None:
+            custom_values = {}
+        defaults = {
+            'name': msg.get('subject') or _("No Subject"),
+            'partner_id': msg.get('author_id')
+        }
+        defaults.update(custom_values)
+        p_order = super(PurchaseOrder, self.with_context(create_context)).message_new(msg, custom_values=defaults)
+
+        followers_obj = p_order.env['mail.followers']
+        follower_id = False
+        reg = {
+            'res_id': p_order.id,
+            'res_model': 'purchase.order',
+            'partner_id': msg.get('author_id'), }
+        try:
+            follower_id = followers_obj.create(reg)
+        except:
+            _logger.info(u'AddFollower: follower already exists')
+
+        return p_order
+
 
 class PurchaseOrderLine(models.Model):
     _name = 'purchase.order.line'
